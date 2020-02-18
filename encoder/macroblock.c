@@ -922,24 +922,22 @@ static ALWAYS_INLINE void macroblock_encode_internal( x264_t *h, int plane_count
     }
 
     /* encode chroma */
-    if( chroma )
-    {
-        if( IS_INTRA( h->mb.i_type ) )
-        {
-            int i_mode = h->mb.i_chroma_pred_mode;
-            if( h->mb.b_lossless )
-                x264_predict_lossless_chroma( h, i_mode );
-            else
-            {
-                h->predict_chroma[i_mode]( h->mb.pic.p_fdec[1] );
-                h->predict_chroma[i_mode]( h->mb.pic.p_fdec[2] );
+    if ( chroma ) {
+        if ( h->fenc && h->fenc->i_coded < 1 ) {
+            if ( IS_INTRA( h->mb.i_type ) ) {
+                int i_mode = h->mb.i_chroma_pred_mode;
+                if ( h->mb.b_lossless )
+                    x264_predict_lossless_chroma( h, i_mode );
+                else {
+                    h->predict_chroma[i_mode]( h->mb.pic.p_fdec[1] );
+                    h->predict_chroma[i_mode]( h->mb.pic.p_fdec[2] );
+                }
             }
-        }
 
-        /* encode the 8x8 blocks */
-        x264_mb_encode_chroma( h, !IS_INTRA( h->mb.i_type ), h->mb.i_chroma_qp );
-    }
-    else
+            /* encode the 8x8 blocks */
+            x264_mb_encode_chroma( h, !IS_INTRA( h->mb.i_type ), h->mb.i_chroma_qp );
+        }
+    } else
         h->mb.i_cbp_chroma = 0;
 
     /* store cbp */
