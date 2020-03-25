@@ -1869,6 +1869,47 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     int i_nal;
     int i_frame_size = 0;
 
+    // The frame dimensions in terms of macroblocks
+    //
+    // From x264.h:
+    // Macroblocks are 16x16 blocks of pixels (with respect to the luma plane).
+    // For the purposes of calculating the number of macroblocks, width and
+    // height are rounded up to the nearest 16.  If in interlaced mode, height
+    // is rounded up to the nearest 32 instead. */
+    //
+    // TODO: For testing, just using the hardcoded video values of 1920x800 of
+    //       our input video.
+    int num_y = 800 / 16;
+    int num_x = 1920 / 16;
+
+    // The maximum quantization offset.
+    int QO_max = 10;
+
+    // The maximum quantization offset.
+    int frame_width_divisor = 8;
+
+    // indices of the macroblock corresponding to the gaze location
+    // Currently just position in roughly the middle
+    int x = num_x / 2;
+    int y = num_y / 2;
+
+    // free previously allocated array
+    if ( pic->prop.quant_offsets_free ) {
+        pic->prop.quant_offsets_free( pic->prop.quant_offsets );
+    }
+    pic->prop.quant_offsets = (float*)malloc( sizeof( float ) * num_x * num_y );
+
+    // Calculate offsets based on a two dimensional Gaussian
+    for ( int j = 0; j < num_y; j++ ) {
+        for ( int i = 0; i < num_x; i++ ) {
+            pic->prop.quant_offsets[( num_x * j ) + i] =
+              QO_max - ( QO_max * exp( -1 * ( ( pow( ( i - x ), 2 ) + pow( ( j - y ), 2 ) ) /
+                                              ( 2 * pow( ( num_x / frame_width_divisor ), 2 ) ) ) ) );
+        }
+    }
+
+    /* x264_encoder_encode(encoder, &nal, &nnal, &pic_in, &pic_out)) */
+
     i_frame_size = x264_encoder_encode( h, &nal, &i_nal, pic, &pic_out );
 
     FAIL_IF_ERROR( i_frame_size < 0, "x264_encoder_encode failed\n" );
