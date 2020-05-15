@@ -36,7 +36,7 @@
 #include "extras/intel_dispatcher.h"
 #endif
 
-//#define DEBUG_MB_TYPE
+#define DEBUG_MB_TYPE
 
 #define bs_write_ue bs_write_ue_big
 
@@ -4073,14 +4073,17 @@ static int encoder_frame_end( x264_t *h, x264_t *thread_current,
         'D', '<', 'X', 'B', 'X', '>', 'B', 'B', 'B', 'B', '8', 'S' };
     for( int mb_xy = 0; mb_xy < h->mb.i_mb_width * h->mb.i_mb_height; mb_xy++ )
     {
-        if( h->mb.type[mb_xy] < X264_MBTYPE_MAX && h->mb.type[mb_xy] >= 0 )
-            fprintf( stderr, "%c ", mb_chars[ h->mb.type[mb_xy] ] );
-        else
-            fprintf( stderr, "? " );
+        if( h->mb.type[mb_xy] < X264_MBTYPE_MAX && h->mb.type[mb_xy] >= 0 ) {
+            fprintf( stderr, "%c:%2d ", mb_chars[ h->mb.type[mb_xy] ], h->mb.qp[mb_xy] );
+        }
+        else {
+            fprintf( stderr, "?? " );
+        }
 
         if( (mb_xy+1) % h->mb.i_mb_width == 0 )
             fprintf( stderr, "\n" );
     }
+    fprintf( stderr, "\n" );
 }
 #endif
 
