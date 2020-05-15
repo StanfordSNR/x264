@@ -1074,6 +1074,7 @@ static struct option long_options[] =
     { "constrained-intra", no_argument, NULL, 0 },
     { "cabac",             no_argument, NULL, 0 },
     { "no-cabac",          no_argument, NULL, 0 },
+    { "dim",          required_argument, NULL, 0 },
     { "qp",          required_argument, NULL, 'q' },
     { "qpmin",       required_argument, NULL, 0 },
     { "qpmax",       required_argument, NULL, 0 },
@@ -1862,7 +1863,7 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
     }
 }
 
-static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_dts )
+static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_dts, int dim )
 {
     x264_picture_t pic_out;
     x264_nal_t *nal;
@@ -1877,38 +1878,41 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     // height are rounded up to the nearest 16.  If in interlaced mode, height
     // is rounded up to the nearest 32 instead. */
     //
-    // TODO: For testing, just using the hardcoded video values of 1920x800 of
-    //       our input video.
+    // TODO: hardcoded for the 1920x800 tears of steel sample video
     int num_y = 800 / 16;
     int num_x = 1920 / 16;
 
-    // The maximum quantization offset.
-    int QO_max = 10;
-
-    // The maximum quantization offset.
-    int frame_width_divisor = 8;
+    // The maximum quantization offset. QP can range from 0-81.
+    int QO_max = QP_MAX;
+    /* int QO_max = 30; */
 
     // indices of the macroblock corresponding to the gaze location
     // Currently just position in roughly the middle
     int x = num_x / 2;
     int y = num_y / 2;
 
-    // free previously allocated array
-    if ( pic->prop.quant_offsets_free ) {
-        pic->prop.quant_offsets_free( pic->prop.quant_offsets );
-    }
-    pic->prop.quant_offsets = (float*)malloc( sizeof( float ) * num_x * num_y );
+    if (dim) {
+        // free previously allocated array and make a new one
+        if ( pic->prop.quant_offsets_free ) {
+            pic->prop.quant_offsets_free( pic->prop.quant_offsets );
+        }
+        pic->prop.quant_offsets = (float*)malloc( sizeof( float ) * num_x * num_y );
 
-    // Calculate offsets based on a two dimensional Gaussian
-    for ( int j = 0; j < num_y; j++ ) {
-        for ( int i = 0; i < num_x; i++ ) {
-            pic->prop.quant_offsets[( num_x * j ) + i] =
-              QO_max - ( QO_max * exp( -1 * ( ( pow( ( i - x ), 2 ) + pow( ( j - y ), 2 ) ) /
-                                              ( 2 * pow( ( num_x / frame_width_divisor ), 2 ) ) ) ) );
+        // Calculate offsets
+        //
+        // We just use a step function outside `dim` macroblocks
+        for ( int j = 0; j < num_y; j++ ) {
+            for ( int i = 0; i < num_x; i++ ) {
+                // Keeps (2(dim) - 1)^2 macroblocks in HQ
+                pic->prop.quant_offsets[( num_x * j ) + i] = (abs(x - i) < dim && abs(y - j) < dim) ? 0 : QO_max;
+                // Below is the 2d gaussian used by Illahi et al.
+                //
+                // pic->prop.quant_offsets[( num_x * j ) + i] =
+                //   QO_max - ( QO_max * exp( -1 * ( ( pow( ( i - x ), 2 ) + pow( ( j - y ), 2 ) ) /
+                //                                ( 2 * pow( ( num_x / dim ), 2 ) ) ) ) );
+            }
         }
     }
-
-    /* x264_encoder_encode(encoder, &nal, &nnal, &pic_in, &pic_out)) */
 
     i_frame_size = x264_encoder_encode( h, &nal, &i_nal, pic, &pic_out );
 
@@ -2076,7 +2080,9 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             parse_qpfile( opt, &pic, i_frame + opt->i_seek );
 
         prev_dts = last_dts;
-        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts );
+
+        // Don't qp_offset the first frame sent, or else quality sucks
+        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_frame < 1) ? 0 : param->dim );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */
@@ -2101,7 +2107,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
     {
         prev_dts = last_dts;
-        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts );
+        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts, param->dim );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */

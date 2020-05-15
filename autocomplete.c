@@ -86,6 +86,7 @@ static const char * const opts_suggest[] =
 /* Options requiring a value for which we don't provide suggestions. */
 static const char * const opts_nosuggest[] =
 {
+    "--dim",
     "--b-bias",
     "--bframes", "-b",
     "--deblock", "-f",

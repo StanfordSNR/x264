@@ -303,6 +303,9 @@ typedef struct x264_zone_t
 
 typedef struct x264_param_t
 {
+    /* QP Offset Test */
+    int         dim;
+
     /* CPU flags */
     uint32_t    cpu;
     int         i_threads;           /* encode multiple frames in parallel */

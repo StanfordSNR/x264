@@ -1272,6 +1272,10 @@ REALIGN_STACK int x264_param_parse( x264_param_t *p, const char *name, const cha
         p->rc.i_bitrate = atoi(value);
         p->rc.i_rc_method = X264_RC_ABR;
     }
+    OPT("dim")
+    {
+        p->dim = atoi(value);
+    }
     OPT2("qp", "qp_constant")
     {
         p->rc.i_qp_constant = atoi(value);
