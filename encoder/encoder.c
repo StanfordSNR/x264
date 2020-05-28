@@ -36,7 +36,7 @@
 #include "extras/intel_dispatcher.h"
 #endif
 
-#define DEBUG_MB_TYPE
+//#define DEBUG_MB_TYPE
 
 #define bs_write_ue bs_write_ue_big
 
