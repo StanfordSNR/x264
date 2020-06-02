@@ -2077,7 +2077,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
 
         prev_dts = last_dts;
 
-        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, param->dim );
+        // Don't qp_offset the first frame sent, or else quality sucks
+        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_frame < 1) ? 0 : param->dim );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */
