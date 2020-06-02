@@ -906,8 +906,9 @@ static int validate_parameters( x264_t *h, int b_open )
         }
 
         h->param.rc.i_qp_min = x264_clip3( (int)(X264_MIN3( qp_p, qp_i, qp_b )), 0, QP_MAX );
-        h->param.rc.i_qp_max = x264_clip3( (int)(X264_MAX3( qp_p, qp_i, qp_b ) + .999), 0, QP_MAX );
-        h->param.rc.i_aq_mode = 0;
+        /* h->param.rc.i_qp_max = x264_clip3( (int)(X264_MAX3( qp_p, qp_i, qp_b ) + .999), 0, QP_MAX ); */
+        h->param.rc.i_qp_max = QP_MAX;
+        /* h->param.rc.i_aq_mode = 0; */
         h->param.rc.b_mb_tree = 0;
         h->param.rc.i_bitrate = 0;
     }

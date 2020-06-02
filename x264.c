@@ -1884,7 +1884,7 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
 
     // The maximum quantization offset. QP can range from 0-81.
     int QO_max = QP_MAX;
-    /* int QO_max = 30; */
+    /* int QO_max = 35; */
 
     // indices of the macroblock corresponding to the gaze location
     // Currently just position in roughly the middle
@@ -1900,12 +1900,12 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
         for ( int j = 0; j < num_y; j++ ) {
             for ( int i = 0; i < num_x; i++ ) {
                 // Keeps (2(dim) - 1)^2 macroblocks in HQ
-                pic->prop.quant_offsets[( num_x * j ) + i] = (abs(x - i) < dim && abs(y - j) < dim) ? 0.0 : (float)QO_max;
+                /* pic->prop.quant_offsets[( num_x * j ) + i] = (abs(x - i) < dim && abs(y - j) < dim) ? 0.0 : (float)QO_max; */
                 // Below is the 2d gaussian used by Illahi et al.
                 //
-                /* pic->prop.quant_offsets[( num_x * j ) + i] = */
-                /*   QO_max - ( QO_max * exp( -1 * ( ( pow( ( i - x ), 2 ) + pow( ( j - y ), 2 ) ) / */
-                /*                                ( 2 * pow( ( num_x / dim ), 2 ) ) ) ) ); */
+                pic->prop.quant_offsets[( num_x * j ) + i] =
+                  QO_max - ( QO_max * exp( -1 * ( ( pow( ( i - x ), 2 ) + pow( ( j - y ), 2 ) ) /
+                                               ( 2 * pow( ( num_x / dim ), 2 ) ) ) ) );
             }
         }
     }
