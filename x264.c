@@ -37,8 +37,10 @@
 #include <fcntl.h>    /* _O_BINARY */
 #endif
 
+#include <stdio.h>
 #include <signal.h>
 #include <getopt.h>
+#include <X11/Xlib.h>
 #include "x264cli.h"
 #include "input/input.h"
 #include "output/output.h"
@@ -1863,12 +1865,13 @@ static void parse_qpfile( cli_opt_t *opt, x264_picture_t *pic, int i_frame )
     }
 }
 
-static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_dts, int dim )
+static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *last_dts, int dim, Display *display, XEvent *xevent )
 {
     x264_picture_t pic_out;
     x264_nal_t *nal;
     int i_nal;
     int i_frame_size = 0;
+    static int x, y;
 
     // The frame dimensions in terms of macroblocks
     //
@@ -1879,17 +1882,25 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     // is rounded up to the nearest 32 instead. */
     //
     // TODO: hardcoded for the 1920x800 tears of steel sample video
-    int num_x = 3840 / 16;
-    int num_y = 2160 / 16;
+    int num_x = 1920 / 16;
+    int num_y = 800 / 16;
+
+    // Find only the most recent event
+    while (XPending(display)) {
+        XNextEvent(display, xevent);
+        switch (xevent->type) {
+            case MotionNotify:
+                // TODO: Just use position of mouse as macroblock
+                x = (xevent->xmotion.x_root / 16) % 120;
+                y = (xevent->xmotion.y_root / 16) % 50;
+        }
+    }
+
+    fprintf(stderr, "Gaze MB: [%d, %d]\n", x, y);
 
     // The maximum quantization offset. QP can range from 0-81.
     int QO_max = QP_MAX;
     /* int QO_max = 35; */
-
-    // indices of the macroblock corresponding to the gaze location
-    // Currently just position in roughly the middle
-    int x = num_x / 2;
-    int y = num_y / 2;
 
     if (dim) {
         pic->prop.quant_offsets = (float*)malloc( sizeof( float ) * num_x * num_y );
@@ -1901,13 +1912,15 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
             for ( int i = 0; i < num_x; i++ ) {
                 // Keeps (2(dim) - 1)^2 macroblocks in HQ
                 pic->prop.quant_offsets[( num_x * j ) + i] = (abs(x - i) < dim && abs(y - j) < dim) ? 0.0 : (float)QO_max;
+
                 // Below is the 2d gaussian used by Illahi et al.
-                //
-                /* pic->prop.quant_offsets[( num_x * j ) + i] = */
-                /*   QO_max - ( QO_max * exp( -1 * ( ( pow( ( i - x ), 2 ) + pow( ( j - y ), 2 ) ) / */
-                /*                                ( 2 * pow( ( num_x / dim ), 2 ) ) ) ) ); */
+                // pic->prop.quant_offsets[( num_x * j ) + i] =
+                //   QO_max - ( QO_max * exp( -1 * ( ( pow( ( i - x ), 2 ) + pow( ( j - y ), 2 ) ) /
+                //                                ( 2 * pow( ( num_x / dim ), 2 ) ) ) ) );
             }
         }
+        // Plain free for the quant_offsets
+        pic->prop.quant_offsets_free = &free;
     }
 
     i_frame_size = x264_encoder_encode( h, &nal, &i_nal, pic, &pic_out );
@@ -1995,6 +2008,25 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     double  pulldown_pts = 0;
     int     retval = 0;
 
+    Display *display;
+    XEvent xevent;
+    Window window;
+
+    FAIL_IF_ERROR((display = XOpenDisplay(NULL)) == NULL, "fail XOpenDisplay");
+
+    window = DefaultRootWindow(display);
+    XAllowEvents(display, AsyncBoth, CurrentTime);
+
+    XGrabPointer(display,
+                 window,
+                 1,
+                 PointerMotionMask,
+                 GrabModeAsync,
+                 GrabModeAsync,
+                 None,
+                 None,
+                 CurrentTime);
+
     opt->b_progress &= param->i_log_level < X264_LOG_DEBUG;
 
     /* set up pulldown */
@@ -2078,7 +2110,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         prev_dts = last_dts;
 
         // Don't qp_offset the first frame sent, or else quality sucks
-        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_frame < 1) ? 0 : param->dim );
+        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_frame < 1) ? 0 : param->dim, display, &xevent );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */
@@ -2103,7 +2135,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     while( !b_ctrl_c && x264_encoder_delayed_frames( h ) )
     {
         prev_dts = last_dts;
-        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts, param->dim );
+        i_frame_size = encode_frame( h, opt->hout, NULL, &last_dts, param->dim, display, &xevent );
         if( i_frame_size < 0 )
         {
             b_ctrl_c = 1; /* lie to exit the loop */

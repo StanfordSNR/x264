@@ -372,6 +372,7 @@ avs="auto"
 lavf="auto"
 ffms="auto"
 gpac="auto"
+x11="auto"
 lsmash="auto"
 mp4="no"
 gpl="yes"
@@ -410,7 +411,7 @@ NL="
 # list of all preprocessor HAVE values we can define
 CONFIG_HAVE="MALLOC_H ALTIVEC ALTIVEC_H MMX ARMV6 ARMV6T2 NEON AARCH64 BEOSTHREAD POSIXTHREAD WIN32THREAD THREAD LOG2F SWSCALE \
              LAVF FFMS GPAC AVS GPL VECTOREXT INTERLACED CPU_COUNT OPENCL THP LSMASH X86_INLINE_ASM AS_FUNC INTEL_DISPATCHER \
-             MSA MMAP WINRT VSX ARM_INLINE_ASM STRTOK_R CLOCK_GETTIME BITDEPTH8 BITDEPTH10"
+             MSA MMAP WINRT VSX ARM_INLINE_ASM STRTOK_R CLOCK_GETTIME BITDEPTH8 BITDEPTH10 X11"
 
 # parse options
 
@@ -1257,6 +1258,15 @@ if [ "$gpac" = "auto" -a "$lsmash" != "yes" ] ; then
         else
             echo "Warning: gpac is too old, update to v0.8.0 or later"
         fi
+    fi
+fi
+
+if [ "$x11" = "auto" ] ; then
+    if pkg_check x11 ; then
+        X11_LIBS="$($PKGCONFIG --libs x11)"
+        LDFLAGSCLI="$X11_LIBS $LDFLAGSCLI"
+        x11="yes"
+        define HAVE_X11 
     fi
 fi
 
