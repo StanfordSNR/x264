@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <getopt.h>
+#include <sys/time.h>
 #include <X11/Xlib.h>
 #include "x264cli.h"
 #include "input/input.h"
@@ -1984,6 +1985,13 @@ do\
     }\
 } while( 0 )
 
+static unsigned long gettimeofday_ms() {
+    struct timeval tv;
+
+    gettimeofday(&tv, NULL);
+    return (tv.tv_sec * 1000) + (tv.tv_usec / 1000);
+}
+
 static int encode( x264_param_t *param, cli_opt_t *opt )
 {
     x264_t *h = NULL;
@@ -1992,6 +2000,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     const cli_pulldown_t *pulldown = NULL; // shut up gcc
 
     int     i_frame = 0;
+    int     i_extra_frame = 0;
     int     i_frame_output = 0;
     int64_t i_end, i_previous = 0, i_start = 0;
     int64_t i_file = 0;
@@ -2069,6 +2078,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
 
     /* Encode frames */
+    i_extra_frame = i_frame;
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
     {
         if( filter.get_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
@@ -2076,53 +2086,63 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         x264_picture_init( &pic );
         convert_cli_to_lib_pic( &pic, &cli_pic );
 
-        if( !param->b_vfr_input )
-            pic.i_pts = i_frame;
+        // 41 ms approx 24 fps
+        int64_t tcont = gettimeofday_ms() + 41;
 
-        if( opt->i_pulldown && !param->b_vfr_input )
-        {
-            pic.i_pic_struct = pulldown->pattern[ i_frame % pulldown->mod ];
-            pic.i_pts = (int64_t)( pulldown_pts + 0.5 );
-            pulldown_pts += pulldown_frame_duration[pic.i_pic_struct];
-        }
-        else if( opt->timebase_convert_multiplier )
-            pic.i_pts = (int64_t)( pic.i_pts * opt->timebase_convert_multiplier + 0.5 );
+        do {
+            if( !param->b_vfr_input )
+                pic.i_pts = i_extra_frame;
 
-        if( pic.i_pts <= largest_pts )
-        {
-            if( cli_log_level >= X264_LOG_DEBUG || pts_warning_cnt < MAX_PTS_WARNING )
-                x264_cli_log( "x264", X264_LOG_WARNING, "non-strictly-monotonic pts at frame %d (%"PRId64" <= %"PRId64")\n",
-                             i_frame, pic.i_pts, largest_pts );
-            else if( pts_warning_cnt == MAX_PTS_WARNING )
-                x264_cli_log( "x264", X264_LOG_WARNING, "too many nonmonotonic pts warnings, suppressing further ones\n" );
-            pts_warning_cnt++;
-            pic.i_pts = largest_pts + ticks_per_frame;
-        }
+            if( opt->i_pulldown && !param->b_vfr_input )
+            {
+                pic.i_pic_struct = pulldown->pattern[ i_frame % pulldown->mod ];
+                pic.i_pts = (int64_t)( pulldown_pts + 0.5 );
+                pulldown_pts += pulldown_frame_duration[pic.i_pic_struct];
+            }
+            else if( opt->timebase_convert_multiplier )
+                pic.i_pts = (int64_t)( pic.i_pts * opt->timebase_convert_multiplier + 0.5 );
 
-        second_largest_pts = largest_pts;
-        largest_pts = pic.i_pts;
-        if( opt->tcfile_out )
-            fprintf( opt->tcfile_out, "%.6f\n", pic.i_pts * ((double)param->i_timebase_num / param->i_timebase_den) * 1e3 );
+            if( pic.i_pts <= largest_pts )
+            {
+                if( cli_log_level >= X264_LOG_DEBUG || pts_warning_cnt < MAX_PTS_WARNING )
+                    x264_cli_log( "x264", X264_LOG_WARNING, "non-strictly-monotonic pts at frame %d (%"PRId64" <= %"PRId64")\n",
+                                 i_extra_frame, pic.i_pts, largest_pts );
+                else if( pts_warning_cnt == MAX_PTS_WARNING )
+                    x264_cli_log( "x264", X264_LOG_WARNING, "too many nonmonotonic pts warnings, suppressing further ones\n" );
+                pts_warning_cnt++;
+                pic.i_pts = largest_pts + ticks_per_frame;
+            }
 
-        if( opt->qpfile )
-            parse_qpfile( opt, &pic, i_frame + opt->i_seek );
+            second_largest_pts = largest_pts;
+            largest_pts = pic.i_pts;
+            if( opt->tcfile_out )
+                fprintf( opt->tcfile_out, "%.6f\n", pic.i_pts * ((double)param->i_timebase_num / param->i_timebase_den) * 1e3 );
 
-        prev_dts = last_dts;
+            if( opt->qpfile )
+                parse_qpfile( opt, &pic, i_frame + opt->i_seek );
 
-        // Don't qp_offset the first frame sent, or else quality sucks
-        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_frame < 1) ? 0 : param->dim, display, &xevent );
-        if( i_frame_size < 0 )
-        {
-            b_ctrl_c = 1; /* lie to exit the loop */
-            retval = -1;
-        }
-        else if( i_frame_size )
-        {
-            i_file += i_frame_size;
-            i_frame_output++;
-            if( i_frame_output == 1 )
-                first_dts = prev_dts = last_dts;
-        }
+            prev_dts = last_dts;
+
+            // Don't qp_offset the first frame sent, or else quality sucks
+            i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_frame < 1) ? 0 : param->dim, display, &xevent );
+            if( i_frame_size < 0 )
+            {
+                b_ctrl_c = 1; /* lie to exit the loop */
+                retval = -1;
+            }
+            else if( i_frame_size )
+            {
+                i_file += i_frame_size;
+                i_frame_output++;
+                if( i_frame_output == 1 )
+                    first_dts = prev_dts = last_dts;
+            }
+
+            i_extra_frame++;
+
+        } while (gettimeofday_ms() < tcont);
+
+        fprintf(stderr, "24fps tick.\n");
 
         if( filter.release_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
