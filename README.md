@@ -11,6 +11,7 @@ https://github.com/gpac/gpac/wiki/GPAC-Build-Guide-for-Linux
 ```
 $ mkdir build
 $ cd build
-$ ../configure
+$ ../configure --enable-static --enable-pic --enable-lto
 $ make -j`nproc`
+$ sudo make install-lib-static
 ```
