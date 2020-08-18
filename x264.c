@@ -1898,7 +1898,7 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
                 // TODO: Just use position of mouse as macroblock
                 m_x = (xevent->xmotion.x_root / 16) % num_x;
                 m_y = (xevent->xmotion.y_root / 16) % num_y;
-                fprintf(stderr, "Mouse: (%d, %d)\n", p_x, p_y);
+                /* fprintf(stderr, "Mouse: (%d, %d)\n", p_x, p_y); */
            }
         }
     }
@@ -1912,8 +1912,8 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     }
 
     // The maximum quantization offset. QP can range from 0-81.
-    int QO_max = QP_MAX;
-    /* int QO_max = 35; */
+    /* int QO_max = QP_MAX; */
+    int QO_max = 35;
 
     if (dim) {
         pic->prop.quant_offsets = (float*)malloc( sizeof( float ) * num_x * num_y );
@@ -1924,12 +1924,12 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
         for ( int j = 0; j < num_y; j++ ) {
             for ( int i = 0; i < num_x; i++ ) {
                 // Keeps (2(dim) - 1)^2 macroblocks in HQ
-                pic->prop.quant_offsets[( num_x * j ) + i] = (abs(m_x - i) < dim && abs(m_y - j) < dim) ? 0.0 : (float)QO_max;
+                /* pic->prop.quant_offsets[( num_x * j ) + i] = (abs(m_x - i) < dim && abs(m_y - j) < dim) ? 0.0 : (float)QO_max; */
 
                 // Below is the 2d gaussian used by Illahi et al.
-                // pic->prop.quant_offsets[( num_x * j ) + i] =
-                //   QO_max - ( QO_max * exp( -1 * ( ( pow( ( i - x ), 2 ) + pow( ( j - y ), 2 ) ) /
-                //                                ( 2 * pow( ( num_x / dim ), 2 ) ) ) ) );
+                pic->prop.quant_offsets[( num_x * j ) + i] =
+                  QO_max - ( QO_max * exp( -1 * ( ( pow( ( i - m_x ), 2 ) + pow( ( j - m_y ), 2 ) ) /
+                                               ( 2 * pow( ( num_x / dim ), 2 ) ) ) ) );
             }
         }
         // Plain free for the quant_offsets
@@ -2090,21 +2090,22 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
 
     /* Encode frames */
-    /* i_extra_frame = i_frame; */
+    i_extra_frame = i_frame;
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
     {
-        // 41 ms approx 24 fps
-        /* int64_t tcont = gettimeofday_ms() + 16; */
 
         if( filter.get_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
 
-        /* while (gettimeofday_ms() < tcont) { */
+        // 41 ms approx 24 fps
+        int64_t tcont = gettimeofday_ms() + 13;
+
+        while (gettimeofday_ms() < tcont) {
             x264_picture_init( &pic );
             convert_cli_to_lib_pic( &pic, &cli_pic );
 
             if( !param->b_vfr_input )
-                pic.i_pts = i_frame;
+                pic.i_pts = i_extra_frame;
 
             if( opt->i_pulldown && !param->b_vfr_input )
             {
@@ -2119,7 +2120,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             {
                 if( cli_log_level >= X264_LOG_DEBUG || pts_warning_cnt < MAX_PTS_WARNING )
                     x264_cli_log( "x264", X264_LOG_WARNING, "non-strictly-monotonic pts at frame %d (%"PRId64" <= %"PRId64")\n",
-                                 i_frame, pic.i_pts, largest_pts );
+                                 i_extra_frame, pic.i_pts, largest_pts );
                 else if( pts_warning_cnt == MAX_PTS_WARNING )
                     x264_cli_log( "x264", X264_LOG_WARNING, "too many nonmonotonic pts warnings, suppressing further ones\n" );
                 pts_warning_cnt++;
@@ -2137,7 +2138,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             prev_dts = last_dts;
 
             // Don't qp_offset the first frame sent, or else quality sucks
-            i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_frame < 1) ? 0 : param->dim, display, &xevent );
+            i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_extra_frame < 1) ? 0 : param->dim, display, &xevent );
             if( i_frame_size < 0 )
             {
                 b_ctrl_c = 1; /* lie to exit the loop */
@@ -2151,8 +2152,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
                     first_dts = prev_dts = last_dts;
             }
 
-            /* i_extra_frame++; */
-        /* } */
+            i_extra_frame++;
+        }
 
 
         if( filter.release_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
