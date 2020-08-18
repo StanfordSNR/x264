@@ -1872,7 +1872,7 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     x264_nal_t *nal;
     int i_nal;
     int i_frame_size = 0;
-    static int x, y;
+    static int p_x = 1920 / 2, p_y = 1080 / 2, m_x = 9, m_y = 0;
 
     // The frame dimensions in terms of macroblocks
     //
@@ -1884,16 +1884,30 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     //
     // TODO: hardcoded for the 1920x800 tears of steel sample video
     int num_x = 1920 / 16;
-    int num_y = 800 / 16;
+    int num_y = 1080 / 16;
+
 
     // Find only the most recent event
     while (XPending(display)) {
         XNextEvent(display, xevent);
         switch (xevent->type) {
-            case MotionNotify:
+            case MotionNotify: {
+                p_x = xevent->xmotion.x_root;
+                p_y = xevent->xmotion.y_root;
+
                 // TODO: Just use position of mouse as macroblock
-                x = (xevent->xmotion.x_root / 16) % num_x;
-                y = (xevent->xmotion.y_root / 16) % num_y;
+                m_x = (xevent->xmotion.x_root / 16) % num_x;
+                m_y = (xevent->xmotion.y_root / 16) % num_y;
+                fprintf(stderr, "Mouse: (%d, %d)\n", p_x, p_y);
+           }
+        }
+    }
+
+    // TODO(lukehsiao): inject dot where mouse cursor is 235 = white for luma
+    uint8_t *luma = pic->img.plane[0];
+    for (int j = 0; j < 1080; j++ ) {
+        for (int i = 0; i < 1920; i++) {
+            luma[(1920 * j) + i] = ((abs(i - p_x) < 5) && (abs(j - p_y) < 5)) ? 0xEB : luma[(1920 * j) + i];
         }
     }
 
@@ -1910,7 +1924,7 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
         for ( int j = 0; j < num_y; j++ ) {
             for ( int i = 0; i < num_x; i++ ) {
                 // Keeps (2(dim) - 1)^2 macroblocks in HQ
-                pic->prop.quant_offsets[( num_x * j ) + i] = (abs(x - i) < dim && abs(y - j) < dim) ? 0.0 : (float)QO_max;
+                pic->prop.quant_offsets[( num_x * j ) + i] = (abs(m_x - i) < dim && abs(m_y - j) < dim) ? 0.0 : (float)QO_max;
 
                 // Below is the 2d gaussian used by Illahi et al.
                 // pic->prop.quant_offsets[( num_x * j ) + i] =
@@ -2076,21 +2090,21 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
 
     /* Encode frames */
-    i_extra_frame = i_frame;
+    /* i_extra_frame = i_frame; */
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
     {
         // 41 ms approx 24 fps
-        int64_t tcont = gettimeofday_ms() + 40;
+        /* int64_t tcont = gettimeofday_ms() + 16; */
 
         if( filter.get_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
 
-        while (gettimeofday_ms() < tcont) {
+        /* while (gettimeofday_ms() < tcont) { */
             x264_picture_init( &pic );
             convert_cli_to_lib_pic( &pic, &cli_pic );
 
             if( !param->b_vfr_input )
-                pic.i_pts = i_extra_frame;
+                pic.i_pts = i_frame;
 
             if( opt->i_pulldown && !param->b_vfr_input )
             {
@@ -2105,7 +2119,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             {
                 if( cli_log_level >= X264_LOG_DEBUG || pts_warning_cnt < MAX_PTS_WARNING )
                     x264_cli_log( "x264", X264_LOG_WARNING, "non-strictly-monotonic pts at frame %d (%"PRId64" <= %"PRId64")\n",
-                                 i_extra_frame, pic.i_pts, largest_pts );
+                                 i_frame, pic.i_pts, largest_pts );
                 else if( pts_warning_cnt == MAX_PTS_WARNING )
                     x264_cli_log( "x264", X264_LOG_WARNING, "too many nonmonotonic pts warnings, suppressing further ones\n" );
                 pts_warning_cnt++;
@@ -2123,7 +2137,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             prev_dts = last_dts;
 
             // Don't qp_offset the first frame sent, or else quality sucks
-            i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_extra_frame < 1) ? 0 : param->dim, display, &xevent );
+            i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_frame < 1) ? 0 : param->dim, display, &xevent );
             if( i_frame_size < 0 )
             {
                 b_ctrl_c = 1; /* lie to exit the loop */
@@ -2137,8 +2151,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
                     first_dts = prev_dts = last_dts;
             }
 
-            i_extra_frame++;
-        }
+            /* i_extra_frame++; */
+        /* } */
 
 
         if( filter.release_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
