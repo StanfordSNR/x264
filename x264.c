@@ -1997,13 +1997,6 @@ do\
     }\
 } while( 0 )
 
-static unsigned long gettimeofday_ms() {
-    struct timeval tv;
-
-    gettimeofday(&tv, NULL);
-    return (tv.tv_sec * 1000) + (tv.tv_usec / 1000);
-}
-
 static int encode( x264_param_t *param, cli_opt_t *opt )
 {
     x264_t *h = NULL;
@@ -2098,9 +2091,8 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
             break;
 
         // 41 ms approx 24 fps
-        int64_t tcont = gettimeofday_ms() + 13;
-
-        while (gettimeofday_ms() < tcont) {
+        int32_t scaler = 72 / 24;
+        for (int i = 0; i < scaler; i++) {
             x264_picture_init( &pic );
             convert_cli_to_lib_pic( &pic, &cli_pic );
 
