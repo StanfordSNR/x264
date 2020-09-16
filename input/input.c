@@ -227,7 +227,7 @@ void *x264_cli_mmap( cli_mmap_t *h, int64_t offset, int64_t size )
     }
 #else
     size_t padded_size = size + MMAP_PADDING;
-    if( (base = mmap( NULL, padded_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, h->fd, offset )) != MAP_FAILED )
+    if( (base = mmap( NULL, padded_size, PROT_READ, MAP_PRIVATE, h->fd, offset )) != MAP_FAILED )
     {
         /* Ask the OS to readahead pages. This improves performance whereas
          * forcing page faults by manually accessing every page does not.
@@ -242,7 +242,7 @@ void *x264_cli_mmap( cli_mmap_t *h, int64_t offset, int64_t size )
          * the file into a copy of the last valid page to prevent reads from invalid memory. */
         size_t aligned_size = (padded_size - 1) & ~h->align_mask;
         if( offset + aligned_size >= h->file_size )
-            mmap( base + aligned_size, padded_size - aligned_size, PROT_READ | PROT_WRITE, MAP_PRIVATE|MAP_FIXED, h->fd, (offset + size - 1) & ~h->align_mask );
+            mmap( base + aligned_size, padded_size - aligned_size, PROT_READ, MAP_PRIVATE|MAP_FIXED, h->fd, (offset + size - 1) & ~h->align_mask );
 
         return base + align;
     }

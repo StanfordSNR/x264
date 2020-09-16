@@ -1872,7 +1872,9 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     x264_nal_t *nal;
     int i_nal;
     int i_frame_size = 0;
-    static int p_x = 1920 / 2, p_y = 1080 / 2, m_x = 9, m_y = 0;
+    const int WIDTH = 3840;
+    const int HEIGHT = 2160;
+    static int p_x = WIDTH / 2, p_y = HEIGHT / 2, m_x = 9, m_y = 0;
 
     // The frame dimensions in terms of macroblocks
     //
@@ -1883,33 +1885,36 @@ static int encode_frame( x264_t *h, hnd_t hout, x264_picture_t *pic, int64_t *la
     // is rounded up to the nearest 32 instead. */
     //
     // TODO: hardcoded for the 1920x800 tears of steel sample video
-    int num_x = 1920 / 16;
-    int num_y = 1080 / 16;
+    int num_x = WIDTH / 16;
+    int num_y = HEIGHT / 16;
 
 
     // Find only the most recent event
-    while (XPending(display)) {
-        XNextEvent(display, xevent);
-        switch (xevent->type) {
-            case MotionNotify: {
-                p_x = xevent->xmotion.x_root;
-                p_y = xevent->xmotion.y_root;
+    /* while (XPending(display)) { */
+    /*     XNextEvent(display, xevent); */
+    /*     switch (xevent->type) { */
+    /*         case MotionNotify: { */
+    /*             p_x = xevent->xmotion.x_root; */
+    /*             p_y = xevent->xmotion.y_root; */
+    /*  */
+    /*             // TODO: Just use position of mouse as macroblock */
+    /*             m_x = (xevent->xmotion.x_root / 16) % num_x; */
+    /*             m_y = (xevent->xmotion.y_root / 16) % num_y; */
+    /*             [> fprintf(stderr, "Mouse: (%d, %d)\n", p_x, p_y); <] */
+    /*        } */
+    /*     } */
+    /* } */
 
-                // TODO: Just use position of mouse as macroblock
-                m_x = (xevent->xmotion.x_root / 16) % num_x;
-                m_y = (xevent->xmotion.y_root / 16) % num_y;
-                /* fprintf(stderr, "Mouse: (%d, %d)\n", p_x, p_y); */
-           }
-        }
-    }
+    m_x = num_x / 2;
+    m_y = num_y / 2;
 
     // TODO(lukehsiao): inject dot where mouse cursor is 235 = white for luma
-    uint8_t *luma = pic->img.plane[0];
-    for (int j = 0; j < 1080; j++ ) {
-        for (int i = 0; i < 1920; i++) {
-            luma[(1920 * j) + i] = ((abs(i - p_x) < 5) && (abs(j - p_y) < 5)) ? 0xEB : luma[(1920 * j) + i];
-        }
-    }
+    /* uint8_t *luma = pic->img.plane[0]; */
+    /* for (int j = 0; j < 2160; j++ ) { */
+    /*     for (int i = 0; i < 3840; i++) { */
+    /*         luma[(3840 * j) + i] = ((abs(i - p_x) < 5) && (abs(j - p_y) < 5)) ? 0xEB : luma[(3840 * j) + i]; */
+    /*     } */
+    /* } */
 
     // The maximum quantization offset. QP can range from 0-81.
     /* int QO_max = QP_MAX; */
@@ -2005,7 +2010,7 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
     const cli_pulldown_t *pulldown = NULL; // shut up gcc
 
     int     i_frame = 0;
-    int     i_extra_frame = 0;
+    /* int     i_extra_frame = 0; */
     int     i_frame_output = 0;
     int64_t i_end, i_previous = 0, i_start = 0;
     int64_t i_file = 0;
@@ -2083,68 +2088,62 @@ static int encode( x264_param_t *param, cli_opt_t *opt )
         fprintf( opt->tcfile_out, "# timecode format v2\n" );
 
     /* Encode frames */
-    i_extra_frame = i_frame;
+    /* i_extra_frame = i_frame; */
     for( ; !b_ctrl_c && (i_frame < param->i_frame_total || !param->i_frame_total); i_frame++ )
     {
 
         if( filter.get_frame( opt->hin, &cli_pic, i_frame + opt->i_seek ) )
             break;
 
-        // 41 ms approx 24 fps
-        int32_t scaler = 72 / 24;
-        for (int i = 0; i < scaler; i++) {
-            x264_picture_init( &pic );
-            convert_cli_to_lib_pic( &pic, &cli_pic );
+        x264_picture_init( &pic );
+        convert_cli_to_lib_pic( &pic, &cli_pic );
 
-            if( !param->b_vfr_input )
-                pic.i_pts = i_extra_frame;
+        if( !param->b_vfr_input )
+            pic.i_pts = i_frame;
 
-            if( opt->i_pulldown && !param->b_vfr_input )
-            {
-                pic.i_pic_struct = pulldown->pattern[ i_frame % pulldown->mod ];
-                pic.i_pts = (int64_t)( pulldown_pts + 0.5 );
-                pulldown_pts += pulldown_frame_duration[pic.i_pic_struct];
-            }
-            else if( opt->timebase_convert_multiplier )
-                pic.i_pts = (int64_t)( pic.i_pts * opt->timebase_convert_multiplier + 0.5 );
+        if( opt->i_pulldown && !param->b_vfr_input )
+        {
+            pic.i_pic_struct = pulldown->pattern[ i_frame % pulldown->mod ];
+            pic.i_pts = (int64_t)( pulldown_pts + 0.5 );
+            pulldown_pts += pulldown_frame_duration[pic.i_pic_struct];
+        }
+        else if( opt->timebase_convert_multiplier )
+            pic.i_pts = (int64_t)( pic.i_pts * opt->timebase_convert_multiplier + 0.5 );
 
-            if( pic.i_pts <= largest_pts )
-            {
-                if( cli_log_level >= X264_LOG_DEBUG || pts_warning_cnt < MAX_PTS_WARNING )
-                    x264_cli_log( "x264", X264_LOG_WARNING, "non-strictly-monotonic pts at frame %d (%"PRId64" <= %"PRId64")\n",
-                                 i_extra_frame, pic.i_pts, largest_pts );
-                else if( pts_warning_cnt == MAX_PTS_WARNING )
-                    x264_cli_log( "x264", X264_LOG_WARNING, "too many nonmonotonic pts warnings, suppressing further ones\n" );
-                pts_warning_cnt++;
-                pic.i_pts = largest_pts + ticks_per_frame;
-            }
+        if( pic.i_pts <= largest_pts )
+        {
+            if( cli_log_level >= X264_LOG_DEBUG || pts_warning_cnt < MAX_PTS_WARNING )
+                x264_cli_log( "x264", X264_LOG_WARNING, "non-strictly-monotonic pts at frame %d (%"PRId64" <= %"PRId64")\n",
+                             i_frame, pic.i_pts, largest_pts );
+            else if( pts_warning_cnt == MAX_PTS_WARNING )
+                x264_cli_log( "x264", X264_LOG_WARNING, "too many nonmonotonic pts warnings, suppressing further ones\n" );
+            pts_warning_cnt++;
+            pic.i_pts = largest_pts + ticks_per_frame;
+        }
 
-            second_largest_pts = largest_pts;
-            largest_pts = pic.i_pts;
-            if( opt->tcfile_out )
-                fprintf( opt->tcfile_out, "%.6f\n", pic.i_pts * ((double)param->i_timebase_num / param->i_timebase_den) * 1e3 );
+        second_largest_pts = largest_pts;
+        largest_pts = pic.i_pts;
+        if( opt->tcfile_out )
+            fprintf( opt->tcfile_out, "%.6f\n", pic.i_pts * ((double)param->i_timebase_num / param->i_timebase_den) * 1e3 );
 
-            if( opt->qpfile )
-                parse_qpfile( opt, &pic, i_frame + opt->i_seek );
+        if( opt->qpfile )
+            parse_qpfile( opt, &pic, i_frame + opt->i_seek );
 
-            prev_dts = last_dts;
+        prev_dts = last_dts;
 
-            // Don't qp_offset the first frame sent, or else quality sucks
-            i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_extra_frame < 1) ? 0 : param->dim, display, &xevent );
-            if( i_frame_size < 0 )
-            {
-                b_ctrl_c = 1; /* lie to exit the loop */
-                retval = -1;
-            }
-            else if( i_frame_size )
-            {
-                i_file += i_frame_size;
-                i_frame_output++;
-                if( i_frame_output == 1 )
-                    first_dts = prev_dts = last_dts;
-            }
-
-            i_extra_frame++;
+        // Don't qp_offset the first frame sent, or else quality sucks
+        i_frame_size = encode_frame( h, opt->hout, &pic, &last_dts, (i_frame < 1) ? 0 : param->dim, display, &xevent );
+        if( i_frame_size < 0 )
+        {
+            b_ctrl_c = 1; /* lie to exit the loop */
+            retval = -1;
+        }
+        else if( i_frame_size )
+        {
+            i_file += i_frame_size;
+            i_frame_output++;
+            if( i_frame_output == 1 )
+                first_dts = prev_dts = last_dts;
         }
 
 
